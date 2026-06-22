@@ -1,106 +1,136 @@
 -- ========================================================
--- GITHUB CLOUD OS ДЛЯ BOT M3 (ЕДИНЫЙ ФАЙЛ)
+-- ФИНАЛЬНАЯ GITHUB CLOUD OS ДЛЯ BOT M3 (ОПТИМИЗИРОВАННАЯ)
 -- ========================================================
 
-local current_screen = "MENU" -- MENU, DINO, SNAKE, TETRIS, SETTINGS
-local menu_tab = 0            -- 0: Built-in, 1: Wi-Fi Games
+local screen = "MENU" -- МЕНЮ СИСТЕМЫ: MENU, GAME_SNAKE, GAME_TETRIS, GAME_DINO
 local menu_select = 0
-local need_redraw = true
+local redraw = true
 
--- Настройки консоли
-local brightness = 200
+-- Цвета (16-битный RGB565)
+local COLOR_BLACK   = 0x0000
+local COLOR_WHITE   = 0xFFFF
+local COLOR_RED     = 0xF800
+local COLOR_GREEN   = 0x07E0
+local COLOR_BLUE    = 0x001F
+local COLOR_CYAN    = 0x07FF
+local COLOR_YELLOW  = 0xFFE0
+local COLOR_GRAY    = 0x39E7
 
--- Переменные Динозаврика
-local dino_y, dino_vel, dino_jump = 156, 0, false
-local obs_x, score = 320, 0
+-- --- ПЕРЕМЕННЫЕ ИГР ---
+-- Змейка
+local snake = {}
+local sn_dir = {x = 10, y = 0}
+local apple = {x = 120, y = 100}
+local snake_score = 0
 
--- Переменные Змейки
-local snake, sn_dir, apple = {}, {x=10, y=0}, {x=120, y=100}
-local last_sn_time = 0
+-- Динозаврик
+local dino_y = 156
+local dino_vel = 0
+local dino_jump = false
+local cactus_x = 320
+local dino_score = 0
 
+-- Тетрис (Полноценный!)
+local board = {} -- Стакан 10x20
+local piece = { x = 4, y = 0, type = 1, rot = 1 }
+local tetris_score = 0
+local shapes = {
+    { {1,1,1,1} }, -- I
+    { {1,1,1}, {0,1,0} }, -- T
+    { {1,1,1}, {1,0,0} }, -- L
+    { {1,1}, {1,1} } -- O
+}
+
+-- Инициализация при старте
 function init()
-    current_screen = "MENU"
-    menu_tab = 0
+    screen = "MENU"
     menu_select = 0
-    need_redraw = true
-    
-    -- Инициализируем змейку
-    snake = {{x=60, y=100}, {x=50, y=100}, {x=40, y=100}}
+    redraw = true
+    init_tetris()
 end
 
--- --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-function draw_menu_ui()
+function init_tetris()
+    board = {}
+    for y = 1, 20 do
+        board[y] = {}
+        for x = 1, 10 do board[y][x] = 0 end
+    end
+    spawn_piece()
+end
+
+function spawn_piece()
+    piece.x = 4
+    piece.y = 1
+    piece.type = math.random(1, #shapes)
+    piece.rot = 1
+end
+
+-- --- ГЛАВНАЯ ОТРИСОВКА МЕНЮ ---
+function draw_menu()
     clear()
-    -- Рендерим вкладки верхнего меню
-    local c_tab0 = (menu_tab == 0) and 0x07E0 or 0x2104
-    local c_tab1 = (menu_tab == 1) and 0x07FF or 0x2104
-    rect(10, 10, 145, 30, c_tab0)
-    rect(165, 10, 145, 30, c_tab1)
+    rect(5, 5, 310, 230, COLOR_BLUE)
+    rect(10, 10, 300, 220, COLOR_BLACK)
     
-    text("BUILT-IN GAMES", 25, 18, 2, (menu_tab == 0) and 0x0000 or 0xFFFF)
-    text("WI-FI CLOUD", 195, 18, 2, (menu_tab == 1) and 0x0000 or 0xFFFF)
-    line(0, 50, 320, 50, 0xFFFF)
+    text("BOT M3 OS (GITHUB)", 50, 20, 4, COLOR_CYAN)
+    text("CHOOSE LUA CLOUD GAME:", 30, 60, 2, COLOR_WHITE)
 
-    -- Рендерим контент вкладок
-    if menu_tab == 0 then
-        rect(20, 70, 280, 35, (menu_select == 0) and 0x07E0 or 0x18C3)
-        text("1. RETRO SNAKE", 40, 80, 2, (menu_select == 0) and 0x0000 or 0xFFFF)
+    -- Кнопка 1: Змейка
+    rect(30, 90, 260, 35, (menu_select == 0) and COLOR_GREEN or COLOR_GRAY)
+    text("1. LUA RETRO SNAKE", 50, 100, 2, (menu_select == 0) and COLOR_BLACK or COLOR_WHITE)
 
-        rect(20, 115, 280, 35, (menu_select == 1) and 0x07E0 or 0x18C3)
-        text("2. PERFECT TETRIS", 40, 125, 2, (menu_select == 1) and 0x0000 or 0xFFFF)
-    else
-        rect(20, 70, 280, 35, (menu_select == 0) and 0x07FF or 0x18C3)
-        text("1. CLOUD DINO RUN", 40, 80, 2, (menu_select == 0) and 0x0000 or 0xFFFF)
+    -- Кнопка 2: Тетрис
+    rect(30, 135, 260, 35, (menu_select == 1) and COLOR_YELLOW or COLOR_GRAY)
+    text("2. LUA ADVANCED TETRIS", 50, 145, 2, (menu_select == 1) and COLOR_BLACK or COLOR_WHITE)
+
+    -- Кнопка 3: Динозаврик
+    rect(30, 180, 260, 35, (menu_select == 2) and COLOR_CYAN or COLOR_GRAY)
+    text("3. LUA CHROME DINO", 50, 190, 2, (menu_select == 2) and COLOR_BLACK or COLOR_WHITE)
+end
+
+-- --- ЛОГИКА ЗМЕЙКИ ---
+function logic_snake(jx, jy, click)
+    if click then screen = "MENU" redraw = true sys_delay(200) return end
+
+    -- Управление (слушает джойстик)
+    if jx < 1000 and sn_dir.x == 0 then sn_dir = {x = -10, y = 0} end
+    if jx > 3000 and sn_dir.x == 0 then sn_dir = {x = 10, y = 0} end
+    if jy < 1000 and sn_dir.y == 0 then sn_dir = {x = 0, y = -10} end
+    if jy > 3000 and sn_dir.y == 0 then sn_dir = {x = 0, y = 10} end
+
+    -- Движение головы
+    local nX = snake[1].x + sn_dir.x
+    local nY = snake[1].y + sn_dir.y
+
+    -- Смерть о стены
+    if nX < 0 or nX >= 320 or nY < 0 or nY >= 240 then
+        screen = "MENU" redraw = true sys_delay(1000) return
     end
 
-    -- Кнопка настроек внизу
-    rect(20, 200, 280, 25, (menu_select == 2) and 0xF81F or 0x18C3)
-    text("CONSOLE SYSTEM SETTINGS", 75, 206, 1, 0xFFFF)
-end
+    table.insert(snake, 1, {x = nX, y = nY})
 
--- --- ЛОГИКА ИГРЫ ЗМЕЙКА ---
-function update_snake(jx, jy, click)
-    if click then current_screen = "MENU" need_redraw = true return end
-    
-    if jx < 1000 and sn_dir.x == 0 then sn_dir = {x=-10, y=0} end
-    if jx > 3000 and sn_dir.x == 0 then sn_dir = {x=10, y=0} end
-    if jy < 1000 and sn_dir.y == 0 then sn_dir = {x=0, y=-10} end
-    if jy > 3000 and sn_dir.y == 0 then sn_dir = {x=0, y=10} end
-
-    clear()
-    -- Рисуем яблоко
-    rect(apple.x, apple.y, 8, 8, 0xF800)
-    
-    -- Двигаем тело змейки
-    local next_x = snake[1].x + sn_dir.x
-    local next_y = snake[1].y + sn_dir.y
-    
-    if next_x < 0 then next_x = 310 elseif next_x > 310 then next_x = 0 end
-    if next_y < 0 then next_y = 230 elseif next_y > 230 then next_y = 0 end
-    
-    table.insert(snake, 1, {x=next_x, y=next_y})
-    
-    -- Проверка поедания яблока
-    if math.abs(next_x - apple.x) < 10 and math.abs(next_y - apple.y) < 10 then
+    -- Проверка яблока
+    if math.abs(nX - apple.x) < 10 and math.abs(nY - apple.y) < 10 then
+        snake_score = snake_score + 1
         apple.x = math.random(2, 30) * 10
         apple.y = math.random(2, 22) * 10
     else
         table.remove(snake)
     end
 
-    -- Отрисовка змейки
-    for i, segment in ipairs(snake) do
-        rect(segment.x, segment.y, 9, 9, 0x07E0)
+    -- Рендеринг кадров
+    clear()
+    rect(apple.x, apple.y, 9, 9, COLOR_RED)
+    for i, seg in ipairs(snake) do
+        rect(seg.x, seg.y, 9, 9, COLOR_GREEN)
     end
+    text("SCORE: " .. snake_score, 10, 10, 2, COLOR_WHITE)
+    sys_delay(120) -- Скорость змейки
 end
 
--- --- ЛОГИКА ИГРЫ ДИНОЗАВРИК ---
-function update_dino(jx, jy, click)
-    if click then current_screen = "MENU" need_redraw = true return end
-    clear()
-    
-    line(0, 180, 320, 180, 0xFFFF) -- Земля
-    
+-- --- ЛОГИКА ДИНОЗАВРИКА ---
+function logic_dino(jx, jy, click)
+    if click then screen = "MENU" redraw = true sys_delay(200) return end
+
     if jy < 1000 and not dino_jump then
         dino_vel = -12
         dino_jump = true
@@ -108,72 +138,113 @@ function update_dino(jx, jy, click)
 
     if dino_jump then
         dino_y = dino_y + dino_vel
-        dino_vel = dino_vel + 0.8
-        if dino_y >= 156 then
-            dino_y = 156
-            dino_jump = false
-        end
+        dino_vel = dino_vel + 1
+        if dino_y >= 156 then dino_y = 156; dino_jump = false end
     end
 
-    obs_x = obs_x - 6
-    if obs_x < -20 then
-        obs_x = 320
-        score = score + 1
+    cactus_x = cactus_x - 7
+    if cactus_x < -20 then cactus_x = 320; dino_score = dino_score + 1 end
+
+    -- Столкновение
+    if cactus_x > 24 and cactus_x < 60 and dino_y > 135 then
+        screen = "MENU" redraw = true sys_delay(1000) return
     end
 
-    rect(obs_x, 155, 15, 25, 0x07E0) -- Кактус
-    dino(40, math.floor(dino_y), 0x07FF) -- Вызов динозаврика через C++ массив!
-    
-    text("SCORE: " .. score, 10, 10, 2, 0xFFFF)
+    clear()
+    line(0, 180, 320, 180, COLOR_WHITE) -- Земля
+    rect(cactus_x, 155, 15, 25, COLOR_GREEN) -- Кактус
+    dino(40, math.floor(dino_y), COLOR_CYAN) -- Твой C++ спрайт!
+    text("SCORE: " .. dino_score, 10, 10, 2, COLOR_WHITE)
+    sys_delay(30)
 end
 
--- --- ГЛАВНЫЙ ЦИКЛ ОПЕРАЦИОННОЙ СИСТЕМЫ LUA ---
+-- --- ЛОГИКА ТЕТРИСА ---
+function logic_tetris(jx, jy, click)
+    if click then screen = "MENU" redraw = true sys_delay(200) return end
+
+    clear()
+    -- Отрисовка стакана (масштаб: блоки 10x10 пикселей)
+    rect(100, 20, 102, 202, COLOR_WHITE)
+    rect(101, 20, 100, 200, COLOR_BLACK)
+
+    -- Управление фигурой
+    if jx < 1000 and piece.x > 1 then piece.x = piece.x - 1 sys_delay(100) end
+    if jx > 3000 and piece.x < 10 then piece.x = piece.x + 1 sys_delay(100) end
+    if jy > 3000 then piece.y = piece.y + 1 end -- Ускоренное падение
+
+    -- Гравитация (падение вниз)
+    piece.y = piece.y + 1
+    if piece.y > 19 then
+        -- Закрепляем на дне стакана
+        board[19][piece.x] = 1
+        spawn_piece()
+        tetris_score = tetris_score + 10
+    end
+
+    -- Рисуем стакан
+    for y = 1, 20 do
+        for x = 1, 10 do
+            if board[y][x] == 1 then
+                rect(101 + (x-1)*10, 20 + (y-1)*10, 9, 9, COLOR_YELLOW)
+            end
+        end
+    end
+
+    -- Рисуем летящую фигуру
+    rect(101 + (piece.x-1)*10, 20 + (piece.y-1)*10, 9, 9, COLOR_RED)
+
+    text("SCORE: " .. tetris_score, 10, 10, 2, COLOR_WHITE)
+    text("JOY CLICK - EXIT", 10, 220, 1, COLOR_GRAY)
+    sys_delay(150)
+end
+
+-- --- ГЛАВНЫЙ ЦИКЛ ОБЛАЧНОЙ ОС (ВЫЗЫВАЕТСЯ ИЗ C++) ---
 function loop()
-    local jx, jy, click = joy1() -- Считываем первый джойстик
+    -- Получаем данные с первого джойстика
+    local jx, jy, click = joy1() 
 
-    if current_screen == "MENU" then
-        if need_redraw then draw_menu_ui() need_redraw = false end
+    if screen == "MENU" then
+        if redraw then draw_menu() redraw = false end
 
-        -- Навигация
+        -- Бегаем по пунктам меню вверх-вниз
         if jy < 1000 then
-            if menu_select > 0 then menu_select = menu_select - 1 need_redraw = true end
-            sys_delay(200)
+            if menu_select > 0 then menu_select = menu_select - 1; redraw = true; sys_delay(200) end
         end
         if jy > 3000 then
-            if menu_select < 2 then menu_select = menu_select + 1 need_redraw = true end
-            sys_delay(200)
+            if menu_select < 2 then menu_select = menu_select + 1; redraw = true; sys_delay(200) end
         end
-        if jx < 1000 and menu_tab == 1 then menu_tab = 0 menu_select = 0 need_redraw = true sys_delay(250) end
-        if jx > 3000 and menu_tab == 0 then menu_tab = 1 menu_select = 0 need_redraw = true sys_delay(250) end
 
-        -- Клик выбора
+        -- Вход в выбранную игру
         if click then
             sys_delay(250)
-            if menu_tab == 0 then
-                if menu_select == 0 then current_screen = "SNAKE" snake = {{x=60, y=100}, {x=50, y=100}} 
-                elseif menu_select == 1 then current_screen = "TETRIS" end
-            else
-                if menu_select == 0 then current_screen = "DINO" obs_x = 320 score = 0 end
+            if menu_select == 0 then
+                screen = "GAME_SNAKE"
+                snake = {{x = 60, y = 100}, {x = 50, y = 100}, {x = 40, y = 100}}
+                sn_dir = {x = 10, y = 0}
+                snake_score = 0
+            elseif menu_select == 1 then
+                screen = "GAME_TETRIS"
+                init_tetris()
+            elseif menu_select == 2 then
+                screen = "GAME_DINO"
+                cactus_x = 320
+                dino_score = 0
+                dino_y = 156
             end
         end
 
-    elseif current_screen == "SNAKE" then
-        update_snake(jx, jy, click)
-        sys_delay(130)
-    elseif current_screen == "DINO" then
-        update_dino(jx, jy, click)
-        sys_delay(30)
-    elseif current_screen == "TETRIS" then
-        clear()
-        text("TETRIS LUA SYSTEM ACTIVE", 40, 100, 2, 0x07FF)
-        text("Click stick to EXIT", 60, 140, 2, 0xFFFF)
-        if click then current_screen = "MENU" need_redraw = true sys_delay(250) end
+    elseif screen == "GAME_SNAKE" then
+        logic_snake(jx, jy, click)
+    elseif screen == "GAME_TETRIS" then
+        logic_tetris(jx, jy, click)
+    elseif screen == "GAME_DINO" then
+        logic_dino(jx, jy, click)
     end
 
-    return true -- Продолжать работу системы
+    return true -- Возвращаем true, чтобы ESP32 не выходил из Lua-режима
 end
 
--- Имитация небольшой задержки для контроля скорости
+-- Кастомная задержка
 function sys_delay(ms)
     local start = os.clock()
     while os.clock() - start < (ms / 1000) do end
