@@ -1,0 +1,20 @@
+[GAME_INIT]
+speed=110
+start_len=3
+snake_color=0x07E0
+apple_color=0xF800
+bg_color=0x0000
+
+[GAME_LOGIC]
+wrap_around=true
+allow_die_by_tail=true
+
+[CONTROLS]
+move_left=JOY_X<1000
+move_right=JOY_X>3000
+move_up=JOY_Y<1000
+move_down=JOY_Y>3000
+
+[UI_TEXT]
+msg_loading=LOADING SNAKE FROM GITHUB...
+msg_gameover=GAME OVER! PRESS STICK
